@@ -28,12 +28,14 @@ using CoreFtp;
 using Microsoft.WindowsAzure.Storage.Blob;
 using Microsoft.WindowsAzure.Storage;
 using Renci.SshNet;
+using Microsoft.Azure.Management.Search.Fluent;
+using Microsoft.Azure.Management.Search.Fluent.Models;
 using Microsoft.Azure.Management.ServiceBus.Fluent;
 using Microsoft.Azure.ServiceBus;
 using System.Threading;
 using System.Net.Http.Headers;
-using Microsoft.Azure.Management.DocumentDB.Fluent;
-using Microsoft.Azure.Management.DocumentDB.Fluent.Models;
+using Microsoft.Azure.Management.CosmosDB.Fluent;
+using Microsoft.Azure.Management.CosmosDB.Fluent.Models;
 using Microsoft.Azure.Management.Compute.Fluent.Models;
 using Microsoft.Azure.Management.Graph.RBAC.Fluent;
 using Microsoft.Azure.Management.Graph.RBAC.Fluent.Models;
@@ -302,6 +304,34 @@ namespace Microsoft.Azure.Management.Samples.Common
             {
                 builder.Append("\n\t\tAccessRight: ")
                         .Append("\n\t\t\tName :").Append(right.ToString());
+            }
+
+            Log(builder.ToString());
+        }
+
+        public static void Print(Search.Fluent.ISearchService searchService)
+        {
+            var adminKeys = searchService.GetAdminKeys();
+            var queryKeys = searchService.ListQueryKeys();
+
+            StringBuilder builder = new StringBuilder()
+                    .Append("Service bus subscription: ").Append(searchService.Id)
+                    .Append("\n\tResource group: ").Append(searchService.ResourceGroupName)
+                    .Append("\n\tRegion: ").Append(searchService.Region)
+                    .Append("\n\tSku: ").Append(searchService.Sku.Name)
+                    .Append("\n\tStatus: ").Append(searchService.Status)
+                    .Append("\n\tProvisioning State: ").Append(searchService.ProvisioningState)
+                    .Append("\n\tHosting Mode: ").Append(searchService.HostingMode)
+                    .Append("\n\tReplicas: ").Append(searchService.ReplicaCount)
+                    .Append("\n\tPartitions: ").Append(searchService.PartitionCount)
+                    .Append("\n\tPrimary Admin Key: ").Append(adminKeys.PrimaryKey)
+                    .Append("\n\tSecondary Admin Key: ").Append(adminKeys.SecondaryKey)
+                    .Append("\n\tQuery keys:");
+
+            foreach (IQueryKey queryKey in queryKeys)
+            {
+                builder.Append("\n\t\tKey name: ").Append(queryKey.Name);
+                builder.Append("\n\t\t   Value: ").Append(queryKey.Key);
             }
 
             Log(builder.ToString());
@@ -614,6 +644,11 @@ namespace Microsoft.Azure.Management.Samples.Common
                 networkProfile.Append("\n\t\tId:").Append(networkInterfaceId);
             }
 
+            var msi = new StringBuilder().Append("\n\tMSI: ");
+            msi.Append("\n\t\tMSI enabled:").Append(virtualMachine.IsManagedServiceIdentityEnabled);
+            msi.Append("\n\t\tMSI Active Directory Service Principal Id:").Append(virtualMachine.ManagedServiceIdentityPrincipalId);
+            msi.Append("\n\t\tMSI Active Directory Tenant Id:").Append(virtualMachine.ManagedServiceIdentityTenantId);
+
             Utilities.Log(new StringBuilder().Append("Virtual Machine: ").Append(virtualMachine.Id)
                     .Append("Name: ").Append(virtualMachine.Name)
                     .Append("\n\tResource group: ").Append(virtualMachine.ResourceGroupName)
@@ -624,6 +659,7 @@ namespace Microsoft.Azure.Management.Samples.Common
                     .Append(storageProfile)
                     .Append(osProfile)
                     .Append(networkProfile)
+                    .Append(msi)
                     .ToString());
         }
 
@@ -795,6 +831,7 @@ namespace Microsoft.Azure.Management.Samples.Common
             }
 
             info.Append("\n\t IP forwarding enabled: ").Append(resource.IsIPForwardingEnabled)
+                    .Append("\n\tAccelerated networking enabled: ").Append(resource.IsAcceleratedNetworkingEnabled)
                     .Append("\n\tMAC Address:").Append(resource.MacAddress)
                     .Append("\n\tPrivate IP:").Append(resource.PrimaryPrivateIP)
                     .Append("\n\tPrivate allocation method:").Append(resource.PrimaryPrivateIPAllocationMethod)
@@ -1607,24 +1644,24 @@ namespace Microsoft.Azure.Management.Samples.Common
             return secret;
         }
 
-        public static void Print(IDocumentDBAccount documentDBAccount)
+        public static void Print(ICosmosDBAccount cosmosDBAccount)
         {
             StringBuilder builder = new StringBuilder()
-                    .Append("DocumentDB: ").Append(documentDBAccount.Id)
-                    .Append("\n\tName: ").Append(documentDBAccount.Name)
-                    .Append("\n\tResourceGroupName: ").Append(documentDBAccount.ResourceGroupName)
-                    .Append("\n\tKind: ").Append(documentDBAccount.Kind.ToString())
-                    .Append("\n\tDefault consistency level: ").Append(documentDBAccount.ConsistencyPolicy.DefaultConsistencyLevel)
-                    .Append("\n\tIP range filter: ").Append(documentDBAccount.IPRangeFilter);
+                    .Append("CosmosDB: ").Append(cosmosDBAccount.Id)
+                    .Append("\n\tName: ").Append(cosmosDBAccount.Name)
+                    .Append("\n\tResourceGroupName: ").Append(cosmosDBAccount.ResourceGroupName)
+                    .Append("\n\tKind: ").Append(cosmosDBAccount.Kind.ToString())
+                    .Append("\n\tDefault consistency level: ").Append(cosmosDBAccount.ConsistencyPolicy.DefaultConsistencyLevel)
+                    .Append("\n\tIP range filter: ").Append(cosmosDBAccount.IPRangeFilter);
 
-            foreach (Location writeReplica in documentDBAccount.WritableReplications)
+            foreach (Location writeReplica in cosmosDBAccount.WritableReplications)
             {
                 builder.Append("\n\t\tWrite replication: ")
                         .Append("\n\t\t\tName :").Append(writeReplica.LocationName);
             }
 
-            builder.Append("\n\tNumber of read replications: ").Append(documentDBAccount.ReadableReplications.Count);
-            foreach (Location readReplica in documentDBAccount.ReadableReplications)
+            builder.Append("\n\tNumber of read replications: ").Append(cosmosDBAccount.ReadableReplications.Count);
+            foreach (Location readReplica in cosmosDBAccount.ReadableReplications)
             {
                 builder.Append("\n\t\tRead replication: ")
                         .Append("\n\t\t\tName :").Append(readReplica.LocationName);
@@ -1638,7 +1675,7 @@ namespace Microsoft.Azure.Management.Samples.Common
             StringBuilder builder = new StringBuilder()
                 .Append("Active Directory Application: ").Append(application.Id)
                 .Append("\n\tName: ").Append(application.Name)
-                .Append("\n\tSign on URL: ").Append(application.SignOnUrl)
+                .Append("\n\tSign on URL: ").Append(application.SignOnUrl.ToString())
                 .Append("\n\tReply URLs:");
             foreach (string replyUrl in application.ReplyUrls)
             {
@@ -1671,7 +1708,13 @@ namespace Microsoft.Azure.Management.Samples.Common
                     .Append("Active Directory Group: ").Append(group.Id)
                     .Append("\n\tName: ").Append(group.Name)
                     .Append("\n\tMail: ").Append(group.Mail)
-                    .Append("\n\tSecurity Enabled: ").Append(group.SecurityEnabled);
+                    .Append("\n\tSecurity Enabled: ").Append(group.SecurityEnabled)
+                    .Append("\n\tGroup members:");
+
+            foreach (var obj in group.ListMembers())
+            {
+                builder.Append("\n\t\tType: ").Append(obj.GetType().Name).Append("\tName: ").Append(obj.Name);
+            }
 
             Log(builder.ToString());
         }

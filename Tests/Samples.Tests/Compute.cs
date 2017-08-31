@@ -276,5 +276,27 @@ namespace Samples.Tests
                 }
             }
         }
+
+        [Fact]
+        [Trait("Samples", "Compute")]
+        public void ManageStorageFromMSIEnabledVirtualMachineTest()
+        {
+            using (var context = FluentMockContext.Start(this.GetType().FullName))
+            {
+                var rollUpClient = TestHelper.CreateRollupClient();
+                ManageStorageFromMSIEnabledVirtualMachine.Program.RunSample(rollUpClient);
+            }
+        }
+
+        [Fact]
+        [Trait("Samples", "Compute")]
+        public void ManageResourceFromMSIEnabledVirtualMachineBelongsToAADGroupTest()
+        {
+            using (var context = FluentMockContext.Start(this.GetType().FullName))
+            {
+                var rollUpClient = TestHelper.CreateRollupClient();
+                ManageResourceFromMSIEnabledVirtualMachineBelongsToAADGroup.Program.RunSample(rollUpClient);
+            }
+        }
     }
 }

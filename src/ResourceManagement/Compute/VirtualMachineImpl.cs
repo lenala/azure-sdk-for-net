@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information.
 using Microsoft.Azure.Management.Compute.Fluent.Models;
+using Microsoft.Azure.Management.Graph.RBAC.Fluent;
 using Microsoft.Azure.Management.Network.Fluent;
 using Microsoft.Azure.Management.ResourceManager.Fluent;
 using Microsoft.Azure.Management.ResourceManager.Fluent.Core;
@@ -33,7 +34,9 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         VirtualMachine.DefinitionManagedOrUnmanaged.IDefinitionManagedOrUnmanaged,
         VirtualMachine.DefinitionManaged.IDefinitionManaged,
         VirtualMachine.DefinitionUnmanaged.IDefinitionUnmanaged,
-        VirtualMachine.Update.IUpdate
+        VirtualMachine.Update.IUpdate,
+        VirtualMachine.Definition.IWithRoleAndScopeOrCreate,
+        VirtualMachine.Update.IWithRoleAndScopeOrUpdate
     {
         private readonly IStorageManager storageManager;
         private readonly INetworkManager networkManager;
@@ -76,6 +79,8 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         private ManagedDataDiskCollection managedDataDisks;
         // unique key of a creatable storage account to be used for boot diagnostics
         private string creatableDiagnosticsStorageAccountKey;
+        // Utility to setup MSI for the virtual machine
+        private VirtualMachineMsiHelper virtualMachineMsiHelper;
 
         ///GENMHASH:0A331C2401291DF824493E64F2798884:D3B04C536032C2BDC056A8F85225875E
         internal VirtualMachineImpl(
@@ -83,7 +88,8 @@ namespace Microsoft.Azure.Management.Compute.Fluent
             VirtualMachineInner innerModel,
             IComputeManager computeManager,
             IStorageManager storageManager,
-            INetworkManager networkManager)
+            INetworkManager networkManager, 
+            IGraphRbacManager rbacManager)
             : base(name, innerModel, computeManager)
         {
             this.storageManager = storageManager;
@@ -96,6 +102,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
             InitializeExtensions();
             this.managedDataDisks = new ManagedDataDiskCollection(this);
             InitializeDataDisks();
+            this.virtualMachineMsiHelper = new VirtualMachineMsiHelper(rbacManager);
         }
 
         ///GENMHASH:4002186478A1CB0B59732EBFB18DEB3A:4C74CDEFBB89F8ADB720DB2B740C1AB3
@@ -117,7 +124,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:667E734583F577A898C6389A3D9F4C09:B1A3725E3B60B26D7F37CA7ABFE371B0
         public void Deallocate()
         {
-            Manager.Inner.VirtualMachines.Deallocate(this.ResourceGroupName, this.Name);
+            Extensions.Synchronize(() => Manager.Inner.VirtualMachines.DeallocateAsync(this.ResourceGroupName, this.Name));
             Refresh();
         }
 
@@ -130,7 +137,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:F5949CB4AFA8DD0B8DED0F369B12A8F6:6AC69BE8BE090CDE9822C84DD5F906F3
         public VirtualMachineInstanceView RefreshInstanceView()
         {
-            return RefreshInstanceViewAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            return Extensions.Synchronize(() => RefreshInstanceViewAsync());
         }
 
         ///GENMHASH:D97B6272C7E7717C00D4F9B818A713C0:8DD09B90F0555BB3E1AEF7B9AF044379
@@ -147,7 +154,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:0745971EF3F2CE7276C7E535722C5E6C:F7A7B3A36B61441CF0850BDE432A2805
         public void Generalize()
         {
-            Manager.Inner.VirtualMachines.Generalize(this.ResourceGroupName, this.Name);
+            Extensions.Synchronize(() => Manager.Inner.VirtualMachines.GeneralizeAsync(this.ResourceGroupName, this.Name));
         }
 
         public async Task GeneralizeAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -158,7 +165,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:8761D0D225B7C49A7A5025186E94B263:21AAF0008CE6CF3F9846F2DFE1CBEBCB
         public void PowerOff()
         {
-            Manager.Inner.VirtualMachines.PowerOff(this.ResourceGroupName, this.Name);
+            Extensions.Synchronize(() => Manager.Inner.VirtualMachines.PowerOffAsync(this.ResourceGroupName, this.Name));
         }
 
         public async Task PowerOffAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -169,7 +176,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:08CFC096AC6388D1C0E041ECDF099E3D:4479808A1E2B2A23538E662AD3F721EE
         public void Restart()
         {
-            Manager.Inner.VirtualMachines.Restart(this.ResourceGroupName, this.Name);
+            Extensions.Synchronize(() => Manager.Inner.VirtualMachines.RestartAsync(this.ResourceGroupName, this.Name));
         }
 
         public async Task RestartAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -180,7 +187,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:0F38250A3837DF9C2C345D4A038B654B:5723E041D4826DFBE50B8B49C31EAF08
         public void Start()
         {
-            Manager.Inner.VirtualMachines.Start(this.ResourceGroupName, this.Name);
+            Extensions.Synchronize(() => Manager.Inner.VirtualMachines.StartAsync(this.ResourceGroupName, this.Name));
         }
 
         public async Task StartAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -191,8 +198,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:D9EB75AF88B1A07EDC0965B26A7F7C04:E30F1E083D68AA7A68C7128405BA3741
         public void Redeploy()
         {
-            Manager.Inner.VirtualMachines.Redeploy(this.ResourceGroupName, this.Name);
-
+            Extensions.Synchronize(() => Manager.Inner.VirtualMachines.RedeployAsync(this.ResourceGroupName, this.Name));
         }
 
         public async Task RedeployAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -217,14 +223,14 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:842FBE4DCB8BFE1B50632DBBE157AEA8:B5262187B60CE486998F800E9A96B659
         public IEnumerable<Microsoft.Azure.Management.Compute.Fluent.IVirtualMachineSize> AvailableSizes()
         {
-            return Manager.Inner.VirtualMachines.ListAvailableSizes(this.ResourceGroupName,this.Name)
+            return Extensions.Synchronize(() => Manager.Inner.VirtualMachines.ListAvailableSizesAsync(this.ResourceGroupName,this.Name))
                 .Select(inner => new VirtualMachineSizeImpl(inner));
         }
 
         ///GENMHASH:1F383B6B989059B78D6ECB949E789CD4:D3D812C91301FB29508197FA8534CDDC
         public string Capture(string containerName, string vhdPrefix, bool overwriteVhd)
         {
-            return this.CaptureAsync(containerName, vhdPrefix, overwriteVhd).ConfigureAwait(false).GetAwaiter().GetResult();
+            return Extensions.Synchronize(() => this.CaptureAsync(containerName, vhdPrefix, overwriteVhd));
         }
 
         ///GENMHASH:C345130B595C0FF585A57651EFDC3A0F:E97CAC99D13041F7FEAACC7E4508DC7B
@@ -1477,6 +1483,73 @@ namespace Microsoft.Azure.Management.Compute.Fluent
             return null;
         }
 
+        ///GENMHASH:9019C44FB9C28F62603D9972D45A9522:04EA2CF2FF84B5C44179285E14BA0FF0
+        public string ManagedServiceIdentityPrincipalId()
+        {
+            if (this.Inner.Identity != null) {
+                return this.Inner.Identity.PrincipalId;
+            }
+            return null;
+        }
+
+        ///GENMHASH:9019C44FB9C28F62603D9972D45A9522:04EA2CF2FF84B5C44179285E14BA0FF0
+        public bool IsManagedServiceIdentityEnabled()
+        {
+            return this.ManagedServiceIdentityPrincipalId() != null
+                && this.ManagedServiceIdentityTenantId() != null;
+        }
+
+        ///GENMHASH:D19E7D61822C4048249EC4B57FA6F59B:E55E888BE3583ADCF1863F5A9DC47299
+        public string ManagedServiceIdentityTenantId()
+        {
+            if (this.Inner.Identity != null) {
+                return this.Inner.Identity.TenantId;
+            }
+            return null;
+        }
+
+        ///GENMHASH:E059E91FE0CBE4B6875986D1B46994D2:AF3425B1B2ADC5865D8191FBE2FE4BBC
+        public VirtualMachineImpl WithManagedServiceIdentity()
+        {
+            this.virtualMachineMsiHelper.WithManagedServiceIdentity(this.Inner);
+            return this;
+        }
+
+        ///GENMHASH:D9244CA3B3398B7594B546247D593343:FE0DBB208E366B7AD2F00C67E391FED1
+        public VirtualMachineImpl WithManagedServiceIdentity(int tokenPort)
+        {
+            this.virtualMachineMsiHelper.WithManagedServiceIdentity(tokenPort, this.Inner);
+            return this;
+        }
+
+        ///GENMHASH:DEF511724D2CC8CA91F24E084BC9AA22:72F0234D4EBEB820BB2E8EB0ED1665A6
+        public VirtualMachineImpl WithRoleDefinitionBasedAccessTo(string scope, string roleDefinitionId)
+        {
+            this.virtualMachineMsiHelper.WithRoleDefinitionBasedAccessTo(scope, roleDefinitionId);
+            return this;
+        }
+
+        ///GENMHASH:F6C5721A84FA825F62951BE51537DD36:8A9263C84F0D839E6FAFC22D8AA1C9C4
+        public VirtualMachineImpl WithRoleBasedAccessToCurrentResourceGroup(BuiltInRole asRole)
+        {
+            this.virtualMachineMsiHelper.WithRoleBasedAccessToCurrentResourceGroup(asRole);
+            return this;
+        }
+
+        ///GENMHASH:5FD7E26022EAFDACD062A87DDA8FD39A:7E679ACDB7E20973F54635A194130E55
+        public VirtualMachineImpl WithRoleDefinitionBasedAccessToCurrentResourceGroup(string roleDefinitionId)
+        {
+            this.virtualMachineMsiHelper.WithRoleDefinitionBasedAccessToCurrentResourceGroup(roleDefinitionId);
+            return this;
+        }
+
+        ///GENMHASH:EFFF7ECD982913DB369E1EF1644031CB:C9A5FE940311449954FA688A4B3D8333
+        public VirtualMachineImpl WithRoleBasedAccessTo(string scope, BuiltInRole asRole)
+        {
+            this.virtualMachineMsiHelper.WithRoleBasedAccessTo(scope, asRole);
+            return this;
+        }
+
         ///GENMHASH:0202A00A1DCF248D2647DBDBEF2CA865:272F8DA403745EB8C8C6DCCD8A4778E2
         public async override Task<Microsoft.Azure.Management.Compute.Fluent.IVirtualMachine> CreateResourceAsync(CancellationToken cancellationToken = default(CancellationToken))
         {
@@ -1506,11 +1579,25 @@ namespace Microsoft.Azure.Management.Compute.Fluent
                 //
                 response = await Manager.Inner.VirtualMachines.GetAsync(ResourceGroupName, vmName, null, cancellationToken);
             }
-            this.SetInner(response);
+            this.Reset(response);
+            MSIResourcesSetupResult msiResourceSetupResult = await virtualMachineMsiHelper.SetupVirtualMachineMSIResourcesAsync(this, cancellationToken);
+            if (msiResourceSetupResult.IsExtensionInstalledOrUpdated)
+            {
+                // Another get to fetch vm inner with extensions list reflecting MSI extension changes.
+                //
+                response = await Manager.Inner.VirtualMachines.GetAsync(ResourceGroupName, vmName, null, cancellationToken);
+                this.Reset(response);
+            }
+            return this;
+        }
+
+        ///GENMHASH:C39D7E2559FD1B42A87D25FE5A1DF9FB:66952279088908D6E3122C9FE427DCE3
+        private void Reset(VirtualMachineInner inner)
+        {
+            this.SetInner(inner);
             ClearCachedRelatedResources();
             InitializeDataDisks();
             InitializeExtensions();
-            return this;
         }
 
         ///GENMHASH:F0BA5F3F27F923CBF88531E8051E2766:3A9860E56B386DEBF12E9494C009C2A3
@@ -1749,12 +1836,10 @@ namespace Microsoft.Azure.Management.Compute.Fluent
                 || this.Inner.DiagnosticsProfile.BootDiagnostics == null)
             {
                 return diskStorageAccount;
-            }
-            if (this.Inner.DiagnosticsProfile.BootDiagnostics.StorageUri != null)
+            } else if (this.Inner.DiagnosticsProfile.BootDiagnostics.StorageUri != null)
             {
                 return diskStorageAccount;
-            }
-            if (this.Inner.DiagnosticsProfile.BootDiagnostics.Enabled.HasValue 
+            } else if (this.Inner.DiagnosticsProfile.BootDiagnostics.Enabled.HasValue 
                 && this.Inner.DiagnosticsProfile.BootDiagnostics.Enabled == true)
             {
                 if (this.creatableDiagnosticsStorageAccountKey != null)

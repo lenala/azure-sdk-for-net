@@ -54,13 +54,13 @@ namespace Microsoft.Azure.Management.AppService.Fluent
         ///GENMHASH:6A2970A94B2DD4A859B00B9B9D9691AD:A96EEE048AFB7EAC724AC09421CBB824
         public Region Region()
         {
-            return ResourceManager.Fluent.Core.Region.Create(Inner.Location);
+            return parent.Region;
         }
 
         ///GENMHASH:4B19A5F1B35CA91D20F63FBB66E86252:783B8B84020BF7A1FA8A58B407A27A05
         public IReadOnlyDictionary<string, string> Tags()
         {
-            return new ReadOnlyDictionary<string, string>(Inner.Tags);
+            return Parent.Tags;
         }
 
         ///GENMHASH:4C616F44C9C4BFD93594B6D9092A394A:0AC8A05BCD3A6B7CBD7958C57BCC894F
@@ -79,7 +79,7 @@ namespace Microsoft.Azure.Management.AppService.Fluent
         ///GENMHASH:F340B9C68B7C557DDB54F615FEF67E89:0D9EEC636DF1E11A81923129881E6F92
         public string RegionName()
         {
-            return Inner.Location;
+            return parent.RegionName;
         }
 
         ///GENMHASH:FD5D5A8D6904B467321E345BE1FA424E:8AB87020DE6C711CD971F3D80C33DD83
@@ -120,7 +120,7 @@ namespace Microsoft.Azure.Management.AppService.Fluent
         ///GENMHASH:5E4C278C0FA45BB98AA6EAEE080D4953:FC16212D06A7CCEE646CE7693B370B6F
         public IHostNameBinding Create()
         {
-            return CreateAsync().Result;
+            return Extensions.Synchronize(() => CreateAsync());
         }
 
         ///GENMHASH:1AF7DCAA563064BE5F57020487ABA63B:9EB989BD7CA88C88EBCC64DAB83581CD
@@ -247,11 +247,11 @@ namespace Microsoft.Azure.Management.AppService.Fluent
         {
             if (parent is IDeploymentSlot)
             {
-                SetInner(parent.Manager.Inner.WebApps.GetHostNameBindingSlot(Parent.ResourceGroupName, ((IDeploymentSlot)parent).Parent.Name, parent.Name, name));
+                SetInner(Extensions.Synchronize(() => parent.Manager.Inner.WebApps.GetHostNameBindingSlotAsync(Parent.ResourceGroupName, ((IDeploymentSlot)parent).Parent.Name, parent.Name, name)));
             }
             else
             {
-                SetInner(parent.Manager.Inner.WebApps.GetHostNameBinding(parent.ResourceGroupName, parent.Name, name));
+                SetInner(Extensions.Synchronize(() => parent.Manager.Inner.WebApps.GetHostNameBindingAsync(parent.ResourceGroupName, parent.Name, name)));
             }
 
             return this;
@@ -262,11 +262,11 @@ namespace Microsoft.Azure.Management.AppService.Fluent
         {
             if (parent is IWebApp)
             {
-                SetInner(parent.Manager.Inner.WebApps.GetHostNameBinding(parent.ResourceGroupName, parent.Name, Name()));
+                SetInner(Extensions.Synchronize(() => parent.Manager.Inner.WebApps.GetHostNameBindingAsync(parent.ResourceGroupName, parent.Name, Name())));
             }
             else
             {
-                SetInner(parent.Manager.Inner.WebApps.GetHostNameBindingSlot(parent.ResourceGroupName, ((IDeploymentSlot)parent).Parent.Name, parent.Name, Name()));
+                SetInner(Extensions.Synchronize(() => parent.Manager.Inner.WebApps.GetHostNameBindingSlotAsync(parent.ResourceGroupName, ((IDeploymentSlot)parent).Parent.Name, parent.Name, Name())));
             }
             return this;
         }

@@ -19,6 +19,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
     using VirtualMachineScaleSet.DefinitionUnmanaged;
     using VirtualMachineScaleSet.Update;
     using System.Threading;
+    using Microsoft.Azure.Management.Graph.RBAC.Fluent;
 
     /// <summary>
     /// Implementation of VirtualMachineScaleSet.
@@ -37,11 +38,14 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         IDefinitionManagedOrUnmanaged,
         IDefinitionManaged,
         IDefinitionUnmanaged,
-        IUpdate
+        IUpdate,
+        VirtualMachineScaleSet.Definition.IWithRoleAndScopeOrCreate,
+        VirtualMachineScaleSet.Update.IWithRoleAndScopeOrApply
     {
         // Clients
         private IStorageManager storageManager;
         private INetworkManager networkManager;
+        private IGraphRbacManager rbacManager;
 
         // used to generate unique name for any dependency resources
         private IResourceNamer namer;
@@ -86,6 +90,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         private List<string> primaryInternalLBInboundNatPoolsToAddOnUpdate = new List<string>();
         private bool isUnmanagedDiskSelected;
         private ManagedDataDiskCollection managedDataDisks;
+        private VirtualMachineScaleSetMsiHelper virtualMachineScaleSetMsiHelper;
 
         ///GENMHASH:F0C80BE7722CB6620CCF10F060FE486B:C5CB976F0B76FD0A094017AD226F4439
         internal VirtualMachineScaleSetImpl(
@@ -93,12 +98,15 @@ namespace Microsoft.Azure.Management.Compute.Fluent
             VirtualMachineScaleSetInner innerModel,
             IComputeManager computeManager,
             IStorageManager storageManager,
-            INetworkManager networkManager) : base(name, innerModel, computeManager)
+            INetworkManager networkManager, 
+            IGraphRbacManager rbacManager) : base(name, innerModel, computeManager)
         {
             this.storageManager = storageManager;
             this.networkManager = networkManager;
+            this.rbacManager = rbacManager;
             this.namer = SdkContext.CreateResourceNamer(this.Name);
             this.managedDataDisks = new ManagedDataDiskCollection(this);
+            this.virtualMachineScaleSetMsiHelper = new VirtualMachineScaleSetMsiHelper(rbacManager);
         }
 
         ///GENMHASH:AAC1F72971316317A21BEC14F977DEDE:ABC059395726B5D6BEB36206C2DDA144
@@ -145,7 +153,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:8761D0D225B7C49A7A5025186E94B263:21AAF0008CE6CF3F9846F2DFE1CBEBCB
         public void PowerOff()
         {
-            Manager.Inner.VirtualMachineScaleSets.PowerOff(ResourceGroupName, Name);
+            Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => Manager.Inner.VirtualMachineScaleSets.PowerOffAsync(ResourceGroupName, Name));
         }
 
         public async Task PowerOffAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -177,7 +185,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:667E734583F577A898C6389A3D9F4C09:B1A3725E3B60B26D7F37CA7ABFE371B0
         public void Deallocate()
         {
-            Manager.Inner.VirtualMachineScaleSets.Deallocate(this.ResourceGroupName, this.Name);
+            Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => Manager.Inner.VirtualMachineScaleSets.DeallocateAsync(this.ResourceGroupName, this.Name));
             Refresh();
         }
 
@@ -601,6 +609,102 @@ namespace Microsoft.Azure.Management.Compute.Fluent
             return this;
         }
 
+        ///GENMHASH:1D38DD2A6D3BB89ECF81A51A4906BE8C:412BD8EB9EA1AA5A85C0515A53ACF43C
+        public string ManagedServiceIdentityPrincipalId()
+        {
+            if (this.Inner.Identity != null)
+            {
+                return this.Inner.Identity.PrincipalId;
+            }
+            return null;
+        }
+
+        ///GENMHASH:9019C44FB9C28F62603D9972D45A9522:04EA2CF2FF84B5C44179285E14BA0FF0
+        public bool IsManagedServiceIdentityEnabled()
+        {
+           return this.ManagedServiceIdentityPrincipalId() != null
+            && this.ManagedServiceIdentityTenantId() != null;
+        }
+
+        ///GENMHASH:D19E7D61822C4048249EC4B57FA6F59B:E55E888BE3583ADCF1863F5A9DC47299
+        public string ManagedServiceIdentityTenantId()
+        {
+            if (this.Inner.Identity != null)
+            {
+                return this.Inner.Identity.TenantId;
+            }
+            return null;
+        }
+
+        ///GENMHASH:E059E91FE0CBE4B6875986D1B46994D2:DAA85BBA01C168FF877DF34933F404C0
+        public VirtualMachineScaleSetImpl WithManagedServiceIdentity()
+        {
+            this.virtualMachineScaleSetMsiHelper.WithManagedServiceIdentity(this.Inner);
+            return this;
+        }
+
+        ///GENMHASH:D9244CA3B3398B7594B546247D593343:67897BA2A9EA709C2A4B86073D4D0171
+        public VirtualMachineScaleSetImpl WithManagedServiceIdentity(int tokenPort)
+        {
+            this.virtualMachineScaleSetMsiHelper.WithManagedServiceIdentity(tokenPort, this.Inner);
+            return this;
+        }
+
+        ///GENMHASH:DEF511724D2CC8CA91F24E084BC9AA22:B156E25B8F4ADB8DA7E762E9B3B26AA3
+        public VirtualMachineScaleSetImpl WithRoleDefinitionBasedAccessTo(string scope, string roleDefinitionId)
+        {
+            this.virtualMachineScaleSetMsiHelper.WithRoleDefinitionBasedAccessTo(scope, roleDefinitionId);
+            return this;
+        }
+
+        ///GENMHASH:F6C5721A84FA825F62951BE51537DD36:F9981224C9274380FA869CF773AE86FA
+        public VirtualMachineScaleSetImpl WithRoleBasedAccessToCurrentResourceGroup(BuiltInRole asRole)
+        {
+            this.virtualMachineScaleSetMsiHelper.WithRoleBasedAccessToCurrentResourceGroup(asRole);
+            return this;
+        }
+
+        ///GENMHASH:EFFF7ECD982913DB369E1EF1644031CB:818B408B1CD54C896CA7BA8C333687D3
+        public VirtualMachineScaleSetImpl WithRoleBasedAccessTo(string scope, BuiltInRole asRole)
+        {
+            this.virtualMachineScaleSetMsiHelper.WithRoleBasedAccessTo(scope, asRole);
+            return this;
+        }
+
+        ///GENMHASH:5FD7E26022EAFDACD062A87DDA8FD39A:D4ED935DBBDA2F0DA85365422E2FFCA8
+        public VirtualMachineScaleSetImpl WithRoleDefinitionBasedAccessToCurrentResourceGroup(string roleDefinitionId)
+        {
+            this.virtualMachineScaleSetMsiHelper.WithRoleDefinitionBasedAccessToCurrentResourceGroup(roleDefinitionId);
+            return this;
+        }
+
+        internal OperatingSystemTypes OSTypeIntern()
+        {
+            VirtualMachineScaleSetVMProfile vmProfile = this.Inner.VirtualMachineProfile;
+            if (vmProfile != null
+                    && vmProfile.StorageProfile != null
+                    && vmProfile.StorageProfile.OsDisk != null
+                    && vmProfile.StorageProfile.OsDisk.OsType != null)
+            {
+                return vmProfile.StorageProfile.OsDisk.OsType.Value;
+            }
+            if (vmProfile != null
+                    && vmProfile.OsProfile != null)
+            {
+                if (vmProfile.OsProfile.LinuxConfiguration != null)
+                {
+                    return OperatingSystemTypes.Linux;
+                }
+                if (vmProfile.OsProfile.WindowsConfiguration != null)
+                {
+                    return OperatingSystemTypes.Windows;
+                }
+            }
+            // This should never hit
+            //
+            throw new ArgumentException("Unable to resolve the operating system type");
+        }
+
         ///GENMHASH:801A53D3DABA33CC92425D2203FD9242:023B6E0293C3EE52841DA58E9038A4E6
         private static IReadOnlyDictionary<string, Microsoft.Azure.Management.Network.Fluent.ILoadBalancerInboundNatPool> GetInboundNatPoolsAssociatedWithIPConfiguration(ILoadBalancer loadBalancer, VirtualMachineScaleSetIPConfigurationInner ipConfig)
         {
@@ -703,7 +807,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:08CFC096AC6388D1C0E041ECDF099E3D:4479808A1E2B2A23538E662AD3F721EE
         public void Restart()
         {
-            Manager.Inner.VirtualMachineScaleSets.Restart(this.ResourceGroupName, this.Name);
+            Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => Manager.Inner.VirtualMachineScaleSets.RestartAsync(this.ResourceGroupName, this.Name));
         }
 
         public async Task RestartAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -791,11 +895,11 @@ namespace Microsoft.Azure.Management.Compute.Fluent
                 throw new ArgumentException("Parameter loadBalancer must be an internal load balancer");
             }
             string lbNetworkId = null;
-            foreach (ILoadBalancerFrontend frontEnd in loadBalancer.Frontends.Values)
+            foreach (ILoadBalancerPrivateFrontend frontEnd in loadBalancer.PrivateFrontends.Values)
             {
-                if (frontEnd.Inner.Subnet.Id != null)
+                if (frontEnd.NetworkId != null)
                 {
-                    lbNetworkId = ResourceUtils.ParentResourcePathFromResourceId(frontEnd.Inner.Subnet.Id);
+                    lbNetworkId = frontEnd.NetworkId;
                 }
             }
 
@@ -1355,8 +1459,8 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:CAFE3044E63DB355E0097F6FD22A0282:600739A4DD068DBA0CF85CC076E9111F
         public IEnumerable<IVirtualMachineScaleSetSku> ListAvailableSkus()
         {
-            return Manager.Inner.VirtualMachineScaleSets.ListSkus(ResourceGroupName, Name)
-                   .AsContinuousCollection(link => Manager.Inner.VirtualMachineScaleSets.ListSkusNext(link))
+            return Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => Manager.Inner.VirtualMachineScaleSets.ListSkusAsync(ResourceGroupName, Name))
+                   .AsContinuousCollection(link => Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => Manager.Inner.VirtualMachineScaleSets.ListSkusNextAsync(link)))
                    .Select(inner => new VirtualMachineScaleSetSkuImpl(inner));
         }
 
@@ -1517,6 +1621,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:AC21A10EE2E745A89E94E447800452C1:B5D7FA290CD4B78F425E5D837D1426C5
         protected override void BeforeCreating()
         {
+            this.virtualMachineScaleSetMsiHelper.AddOrUpdateMSIExtension(this);
             if (this.extensions.Count > 0)
             {
                 Inner.VirtualMachineProfile
@@ -1669,7 +1774,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:DB561BC9EF939094412065B65EB3D2EA:323D5930D438D7B746B03A2AB231B061
         public void Reimage()
         {
-            Manager.Inner.VirtualMachineScaleSets.Reimage(ResourceGroupName, Name);
+            Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => Manager.Inner.VirtualMachineScaleSets.ReimageAsync(ResourceGroupName, Name));
         }
         public async Task ReimageAsync(CancellationToken cancellationToken = default(CancellationToken))
         {
@@ -1894,7 +1999,11 @@ namespace Microsoft.Azure.Management.Compute.Fluent
                 VirtualMachineScaleSetUnmanagedDataDiskImpl.SetDataDisksDefaults(dataDisks, Name);
             }
             await HandleOSDiskContainersAsync(cancellationToken);
-            return await Manager.Inner.VirtualMachineScaleSets.CreateOrUpdateAsync(ResourceGroupName, Name, Inner, cancellationToken);
+            var scalesetInner = await Manager.Inner.VirtualMachineScaleSets.CreateOrUpdateAsync(ResourceGroupName, Name, Inner, cancellationToken);
+            // Inner has to be updated so that virtualMachineScaleSetMsiHelper can fetch MSI identity
+            this.SetInner(scalesetInner);
+            await virtualMachineScaleSetMsiHelper.CreateMSIRbacRoleAssignmentsAsync(this);
+            return scalesetInner;
         }
 
         ///GENMHASH:621A22301B3EB5233E9DB4ED5BEC5735:E8427EEC4ACC25554660EF889ECD07A2
@@ -1943,7 +2052,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:0F38250A3837DF9C2C345D4A038B654B:5723E041D4826DFBE50B8B49C31EAF08
         public void Start()
         {
-            Manager.Inner.VirtualMachineScaleSets.Start(ResourceGroupName, Name);
+            Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => Manager.Inner.VirtualMachineScaleSets.StartAsync(ResourceGroupName, Name));
         }
 
         public async Task StartAsync(CancellationToken cancellationToken = default(CancellationToken))

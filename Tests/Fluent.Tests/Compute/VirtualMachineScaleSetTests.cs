@@ -22,6 +22,8 @@ using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
 using System.Net;
 using Newtonsoft.Json.Linq;
+using Microsoft.Azure.Management.Graph.RBAC.Fluent;
+using Microsoft.Azure.Management.Storage.Fluent;
 
 namespace Fluent.Tests.Compute.VirtualMachine
 {
@@ -583,6 +585,237 @@ namespace Fluent.Tests.Compute.VirtualMachine
             }
         }
 
+        [Fact]
+        public void CanEnableMSIWithoutRoleAssignment()
+        {
+            using (var context = FluentMockContext.Start(GetType().FullName))
+            {
+                string vmss_name = TestUtilities.GenerateName("vmss");
+                string groupName = TestUtilities.GenerateName("javacsmrg");
+                IAzure azure = null;
+                try
+                {
+                    azure = TestHelper.CreateRollupClient();
+                    IResourceGroup resourceGroup = azure.ResourceGroups
+                        .Define(groupName)
+                        .WithRegion(Location)
+                        .Create();
+
+                    INetwork network = azure
+                            .Networks
+                            .Define("vmssvnet")
+                            .WithRegion(Location)
+                            .WithExistingResourceGroup(resourceGroup)
+                            .WithAddressSpace("10.0.0.0/28")
+                            .WithSubnet("subnet1", "10.0.0.0/28")
+                            .Create();
+
+                    ILoadBalancer publicLoadBalancer = CreateInternetFacingLoadBalancer(azure, resourceGroup, "1");
+                    List<string> backends = new List<string>();
+                    foreach (string backend in publicLoadBalancer.Backends.Keys)
+                    {
+                        backends.Add(backend);
+                    }
+                    Assert.True(backends.Count() == 2);
+
+                    IVirtualMachineScaleSet virtualMachineScaleSet = azure.VirtualMachineScaleSets
+                        .Define(vmss_name)
+                        .WithRegion(Location)
+                        .WithExistingResourceGroup(resourceGroup)
+                        .WithSku(VirtualMachineScaleSetSkuTypes.StandardA0)
+                        .WithExistingPrimaryNetworkSubnet(network, "subnet1")
+                        .WithExistingPrimaryInternetFacingLoadBalancer(publicLoadBalancer)
+                        .WithPrimaryInternetFacingLoadBalancerBackends(backends[0], backends[1])
+                        .WithoutPrimaryInternalLoadBalancer()
+                        .WithPopularLinuxImage(KnownLinuxVirtualMachineImage.UbuntuServer16_04_Lts)
+                        .WithRootUsername("jvuser")
+                        .WithRootPassword("123OData!@#123")
+                        .WithManagedServiceIdentity()
+                        .Create();
+
+                    var authenticatedClient = TestHelper.CreateAuthenticatedClient();
+                    //
+                    IServicePrincipal servicePrincipal = authenticatedClient
+                            .ServicePrincipals
+                            .GetById(virtualMachineScaleSet.ManagedServiceIdentityPrincipalId);
+
+                    Assert.NotNull(servicePrincipal);
+                    Assert.NotNull(servicePrincipal.Inner);
+
+                    // Ensure the MSI extension is set
+                    //
+                    var extensions = virtualMachineScaleSet.Extensions;
+                    bool extensionFound = false;
+                    foreach (var extension in extensions.Values)
+                    {
+                        if (extension.PublisherName.Equals("Microsoft.ManagedIdentity", StringComparison.OrdinalIgnoreCase)
+                                && extension.TypeName.Equals("ManagedIdentityExtensionForLinux", StringComparison.OrdinalIgnoreCase))
+                        {
+                            extensionFound = true;
+                            break;
+                        }
+                    }
+                    Assert.True(extensionFound);
+
+                    // Ensure no role assigned for resource group
+                    //
+                    var rgRoleAssignments = authenticatedClient.RoleAssignments.ListByScope(resourceGroup.Id);
+                    Assert.NotNull(rgRoleAssignments);
+                    bool found = false;
+                    foreach (var roleAssignment in rgRoleAssignments)
+                    {
+                        if (roleAssignment.PrincipalId != null && roleAssignment.PrincipalId.Equals(virtualMachineScaleSet.ManagedServiceIdentityPrincipalId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    Assert.False(found, "Resource group should not have a role assignment with virtual machine scale set MSI principal");
+
+                }
+                finally
+                {
+                    try
+                    {
+                        if (azure != null)
+                        {
+                            azure.ResourceGroups.BeginDeleteByName(groupName);
+                        }
+                    }
+                    catch { }
+                }
+
+            }
+        }
+
+
+        [Fact]
+        public void CanEnableMSIWithMultipleRoleAssignment()
+        {
+            using (var context = FluentMockContext.Start(GetType().FullName))
+            {
+                string vmss_name = TestUtilities.GenerateName("vmss");
+                string groupName = TestUtilities.GenerateName("javacsmrg");
+                var storageAccountName = TestUtilities.GenerateName("ja");
+                IAzure azure = null;
+                try
+                {
+                    azure = TestHelper.CreateRollupClient();
+                    IResourceGroup resourceGroup = azure.ResourceGroups
+                        .Define(groupName)
+                        .WithRegion(Location)
+                        .Create();
+
+                    INetwork network = azure
+                            .Networks
+                            .Define("vmssvnet")
+                            .WithRegion(Location)
+                            .WithExistingResourceGroup(resourceGroup)
+                            .WithAddressSpace("10.0.0.0/28")
+                            .WithSubnet("subnet1", "10.0.0.0/28")
+                            .Create();
+
+                    ILoadBalancer publicLoadBalancer = CreateInternetFacingLoadBalancer(azure, resourceGroup, "1");
+                    List<string> backends = new List<string>();
+                    foreach (string backend in publicLoadBalancer.Backends.Keys)
+                    {
+                        backends.Add(backend);
+                    }
+                    Assert.True(backends.Count() == 2);
+
+                    IStorageAccount storageAccount = azure.StorageAccounts
+                        .Define(storageAccountName)
+                        .WithRegion(Location)
+                        .WithNewResourceGroup(groupName)
+                        .Create();
+
+                    IVirtualMachineScaleSet virtualMachineScaleSet = azure.VirtualMachineScaleSets
+                        .Define(vmss_name)
+                        .WithRegion(Location)
+                        .WithExistingResourceGroup(resourceGroup)
+                        .WithSku(VirtualMachineScaleSetSkuTypes.StandardA0)
+                        .WithExistingPrimaryNetworkSubnet(network, "subnet1")
+                        .WithExistingPrimaryInternetFacingLoadBalancer(publicLoadBalancer)
+                        .WithPrimaryInternetFacingLoadBalancerBackends(backends[0], backends[1])
+                        .WithoutPrimaryInternalLoadBalancer()
+                        .WithPopularLinuxImage(KnownLinuxVirtualMachineImage.UbuntuServer16_04_Lts)
+                        .WithRootUsername("jvuser")
+                        .WithRootPassword("123OData!@#123")
+                        .WithManagedServiceIdentity()
+                        .WithRoleBasedAccessToCurrentResourceGroup(BuiltInRole.Contributor)
+                        .WithRoleBasedAccessTo(storageAccount.Id, BuiltInRole.Contributor)
+                        .Create();
+
+                    var authenticatedClient = TestHelper.CreateAuthenticatedClient();
+                    //
+                    IServicePrincipal servicePrincipal = authenticatedClient
+                            .ServicePrincipals
+                            .GetById(virtualMachineScaleSet.ManagedServiceIdentityPrincipalId);
+
+                    Assert.NotNull(servicePrincipal);
+                    Assert.NotNull(servicePrincipal.Inner);
+
+                    // Ensure the MSI extension is set
+                    //
+                    var extensions = virtualMachineScaleSet.Extensions;
+                    bool extensionFound = false;
+                    foreach (var extension in extensions.Values)
+                    {
+                        if (extension.PublisherName.Equals("Microsoft.ManagedIdentity", StringComparison.OrdinalIgnoreCase)
+                                && extension.TypeName.Equals("ManagedIdentityExtensionForLinux", StringComparison.OrdinalIgnoreCase))
+                        {
+                            extensionFound = true;
+                            break;
+                        }
+                    }
+                    Assert.True(extensionFound);
+
+                    // Ensure role assigned for resource group
+                    //
+                    var rgRoleAssignments = authenticatedClient.RoleAssignments.ListByScope(resourceGroup.Id);
+                    Assert.NotNull(rgRoleAssignments);
+                    bool found = false;
+                    foreach (var roleAssignment in rgRoleAssignments)
+                    {
+                        if (roleAssignment.PrincipalId != null && roleAssignment.PrincipalId.Equals(virtualMachineScaleSet.ManagedServiceIdentityPrincipalId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    Assert.True(found, "Resource group should have a role assignment with virtual machine scale set MSI principal");
+
+                    // Ensure role assigned for storage account
+                    //
+                    var stgRoleAssignments = authenticatedClient.RoleAssignments.ListByScope(storageAccount.Id);
+                    Assert.NotNull(stgRoleAssignments);
+                    found = false;
+                    foreach (var roleAssignment in stgRoleAssignments)
+                    {
+                        if (roleAssignment.PrincipalId != null && roleAssignment.PrincipalId.Equals(virtualMachineScaleSet.ManagedServiceIdentityPrincipalId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    Assert.True(found, "Storage account should have a role assignment with virtual machine scale set MSI principal");
+
+                }
+                finally
+                {
+                    try
+                    {
+                        if (azure != null)
+                        {
+                            azure.ResourceGroups.BeginDeleteByName(groupName);
+                        }
+                    }
+                    catch { }
+                }
+
+            }
+        }
+
         private void CheckVMInstances(IVirtualMachineScaleSet vmScaleSet)
         {
             var virtualMachineScaleSetVMs = vmScaleSet.VirtualMachines;
@@ -629,7 +862,7 @@ namespace Fluent.Tests.Compute.VirtualMachine
         }
 
 
-        private ILoadBalancer CreateInternetFacingLoadBalancer(Microsoft.Azure.Management.Fluent.IAzure azure, IResourceGroup resourceGroup, string id, [CallerMemberName] string methodName = "testframework_failed")
+        private ILoadBalancer CreateInternetFacingLoadBalancer(IAzure azure, IResourceGroup resourceGroup, string id, [CallerMemberName] string methodName = "testframework_failed")
         {
             string loadBalancerName = TestUtilities.GenerateName("extlb" + id + "-", methodName);
             string publicIPName = "pip-" + loadBalancerName;
@@ -646,53 +879,48 @@ namespace Fluent.Tests.Compute.VirtualMachine
                 .WithLeafDomainLabel(publicIPName)
                 .Create();
 
-            ILoadBalancer loadBalancer = azure.LoadBalancers
-                .Define(loadBalancerName)
+            ILoadBalancer loadBalancer = azure.LoadBalancers.Define(loadBalancerName)
                 .WithRegion(Location)
                 .WithExistingResourceGroup(resourceGroup)
-                .DefinePublicFrontend(frontendName)
-                .WithExistingPublicIPAddress(publicIPAddress)
-                .Attach()
-                // Add two backend one per rule
-                .DefineBackend(backendPoolName1)
-                .Attach()
-                .DefineBackend(backendPoolName2)
-                .Attach()
-                // Add two probes one per rule
-                .DefineHttpProbe("httpProbe")
-                .WithRequestPath("/")
-                .Attach()
-                .DefineHttpProbe("httpsProbe")
-                .WithRequestPath("/")
-                .Attach()
                 // Add two rules that uses above backend and probe
                 .DefineLoadBalancingRule("httpRule")
                     .WithProtocol(TransportProtocol.Tcp)
-                    .WithFrontend(frontendName)
-                    .WithFrontendPort(80)
+                    .FromFrontend(frontendName)
+                    .FromFrontendPort(80)
+                    .ToBackend(backendPoolName1)
                     .WithProbe("httpProbe")
-                    .WithBackend(backendPoolName1)
-                .Attach()
+                    .Attach()
                 .DefineLoadBalancingRule("httpsRule")
                     .WithProtocol(TransportProtocol.Tcp)
-                    .WithFrontend(frontendName)
-                    .WithFrontendPort(443)
+                    .FromFrontend(frontendName)
+                    .FromFrontendPort(443)
+                    .ToBackend(backendPoolName2)
                     .WithProbe("httpsProbe")
-                    .WithBackend(backendPoolName2)
-                .Attach()
+                    .Attach()
                 // Add two nat pools to enable direct VM connectivity to port SSH and 23
                 .DefineInboundNatPool(natPoolName1)
                     .WithProtocol(TransportProtocol.Tcp)
-                    .WithFrontend(frontendName)
-                    .WithFrontendPortRange(5000, 5099)
-                    .WithBackendPort(22)
-                .Attach()
+                    .FromFrontend(frontendName)
+                    .FromFrontendPortRange(5000, 5099)
+                    .ToBackendPort(22)
+                    .Attach()
                 .DefineInboundNatPool(natPoolName2)
                     .WithProtocol(TransportProtocol.Tcp)
-                    .WithFrontend(frontendName)
-                    .WithFrontendPortRange(6000, 6099)
-                    .WithBackendPort(23)
-                .Attach()
+                    .FromFrontend(frontendName)
+                    .FromFrontendPortRange(6000, 6099)
+                    .ToBackendPort(23)
+                    .Attach()
+                // Explicitly define the frontend
+                .DefinePublicFrontend(frontendName)
+                    .WithExistingPublicIPAddress(publicIPAddress)
+                    .Attach()
+                // Add two probes one per rule
+                .DefineHttpProbe("httpProbe")
+                    .WithRequestPath("/")
+                    .Attach()
+                .DefineHttpProbe("httpsProbe")
+                    .WithRequestPath("/")
+                    .Attach()
                 .Create();
 
             loadBalancer = azure.LoadBalancers.GetByResourceGroup(resourceGroup.Name, loadBalancerName);
@@ -724,53 +952,50 @@ namespace Fluent.Tests.Compute.VirtualMachine
             string natPoolName2 = loadBalancerName + "-INP2";
             string subnetName = "subnet1";
 
-            ILoadBalancer loadBalancer = azure.LoadBalancers
-                .Define(loadBalancerName)
+            ILoadBalancer loadBalancer = azure.LoadBalancers.Define(loadBalancerName)
                 .WithRegion(Location)
                 .WithExistingResourceGroup(resourceGroup)
-                .DefinePrivateFrontend(privateFrontEndName)
-                    .WithExistingSubnet(network, subnetName)
-                .Attach()
-                // Add two backend one per rule
-                .DefineBackend(backendPoolName1)
-                .Attach()
-                .DefineBackend(backendPoolName2)
-                .Attach()
-                // Add two probes one per rule
-                .DefineHttpProbe("httpProbe")
-                    .WithRequestPath("/")
-                .Attach()
-                .DefineHttpProbe("httpsProbe")
-                    .WithRequestPath("/")
-                .Attach()
                 // Add two rules that uses above backend and probe
                 .DefineLoadBalancingRule("httpRule")
                     .WithProtocol(TransportProtocol.Tcp)
-                    .WithFrontend(privateFrontEndName)
-                    .WithFrontendPort(1000)
+                    .FromFrontend(privateFrontEndName)
+                    .FromFrontendPort(1000)
+                    .ToBackend(backendPoolName1)
                     .WithProbe("httpProbe")
-                    .WithBackend(backendPoolName1)
-                .Attach()
+                    .Attach()
                 .DefineLoadBalancingRule("httpsRule")
                     .WithProtocol(TransportProtocol.Tcp)
-                    .WithFrontend(privateFrontEndName)
-                    .WithFrontendPort(1001)
+                    .FromFrontend(privateFrontEndName)
+                    .FromFrontendPort(1001)
+                    .ToBackend(backendPoolName2)
                     .WithProbe("httpsProbe")
-                    .WithBackend(backendPoolName2)
-                .Attach()
+                    .Attach()
                 // Add two nat pools to enable direct VM connectivity to port 44 and 45
                 .DefineInboundNatPool(natPoolName1)
                     .WithProtocol(TransportProtocol.Tcp)
-                    .WithFrontend(privateFrontEndName)
-                    .WithFrontendPortRange(8000, 8099)
-                    .WithBackendPort(44)
-                .Attach()
+                    .FromFrontend(privateFrontEndName)
+                    .FromFrontendPortRange(8000, 8099)
+                    .ToBackendPort(44)
+                    .Attach()
                 .DefineInboundNatPool(natPoolName2)
                     .WithProtocol(TransportProtocol.Tcp)
-                    .WithFrontend(privateFrontEndName)
-                    .WithFrontendPortRange(9000, 9099)
-                    .WithBackendPort(45)
-                .Attach()
+                    .FromFrontend(privateFrontEndName)
+                    .FromFrontendPortRange(9000, 9099)
+                    .ToBackendPort(45)
+                    .Attach()
+                
+                // Explicitly define the frontend
+                .DefinePrivateFrontend(privateFrontEndName)
+                    .WithExistingSubnet(network, subnetName)
+                    .Attach()
+
+                // Add two probes one per rule
+                .DefineHttpProbe("httpProbe")
+                    .WithRequestPath("/")
+                    .Attach()
+                .DefineHttpProbe("httpsProbe")
+                    .WithRequestPath("/")
+                    .Attach()
                 .Create();
 
             loadBalancer = azure.LoadBalancers.GetByResourceGroup(resourceGroup.Name, loadBalancerName);
@@ -811,32 +1036,29 @@ namespace Fluent.Tests.Compute.VirtualMachine
                 .WithLeafDomainLabel(publicIPName)
                 .Create();
 
-            var loadBalancer = azure.LoadBalancers
-                .Define(loadBalancerName)
+            var loadBalancer = azure.LoadBalancers.Define(loadBalancerName)
                 .WithRegion(location)
                 .WithExistingResourceGroup(resourceGroup)
-                .DefinePublicFrontend(frontendName)
-                    .WithExistingPublicIPAddress(publicIPAddress)
-                .Attach()
-                .DefineBackend(backendPoolName)
-                .Attach()
-                .DefineHttpProbe("httpProbe")
-                    .WithRequestPath("/")
-                .Attach()
                 // Add two rules that uses above backend and probe
                 .DefineLoadBalancingRule("httpRule")
                     .WithProtocol(TransportProtocol.Tcp)
-                    .WithFrontend(frontendName)
-                    .WithFrontendPort(80)
+                    .FromFrontend(frontendName)
+                    .FromFrontendPort(80)
+                    .ToBackend(backendPoolName)
                     .WithProbe("httpProbe")
-                    .WithBackend(backendPoolName)
-                .Attach()
+                    .Attach()
                 .DefineInboundNatPool(natPoolName)
                     .WithProtocol(TransportProtocol.Tcp)
-                    .WithFrontend(frontendName)
-                    .WithFrontendPortRange(5000, 5099)
-                    .WithBackendPort(22)
-                .Attach()
+                    .FromFrontend(frontendName)
+                    .FromFrontendPortRange(5000, 5099)
+                    .ToBackendPort(22)
+                    .Attach()
+                .DefinePublicFrontend(frontendName)
+                    .WithExistingPublicIPAddress(publicIPAddress)
+                    .Attach()
+                .DefineHttpProbe("httpProbe")
+                    .WithRequestPath("/")
+                    .Attach()
                 .Create();
 
             loadBalancer = azure.LoadBalancers.GetByResourceGroup(resourceGroup.Name, loadBalancerName);

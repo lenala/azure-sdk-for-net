@@ -36,6 +36,15 @@ namespace Samples.Tests
 
         [Fact]
         [Trait("Samples", "Network")]
+        public void CreateSimpleInternetFacingLoadBalancerTest()
+        {
+            RunSampleAsTest(
+                this.GetType().FullName,
+                CreateSimpleInternetFacingLoadBalancer.Program.RunSample);
+        }
+
+        [Fact]
+        [Trait("Samples", "Network")]
         public void ManageInternetFacingLoadBalancerTest()
         {
             RunSampleAsTest(

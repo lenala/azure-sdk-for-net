@@ -329,7 +329,6 @@ namespace Microsoft.Azure.Management.AppService.Fluent
             HostNameBindingInner inner = new HostNameBindingInner()
             {
                 SiteName = Name,
-                Location = RegionName,
                 AzureResourceType = AzureResourceType.Website,
                 AzureResourceName = Name,
                 HostNameType = HostNameType.Verified
@@ -445,52 +444,72 @@ namespace Microsoft.Azure.Management.AppService.Fluent
 
             // Web app creation
             Inner.SiteConfig = new Models.SiteConfig();
-            var site = await CreateOrUpdateInnerAsync(Inner, cancellationToken).ContinueWith<SiteInner>(t =>
-            {
-                var innerSite = t.Result;
-                Inner.SiteConfig = null;
-                return innerSite;
-            }).ContinueWith(t =>
-            {
-                // Submit hostname bindings
-                var bindingTasks = new List<Task>();
-                foreach (var binding in hostNameBindingsToCreate.Values)
+            var site = await CreateOrUpdateInnerAsync(Inner, cancellationToken)
+            .ContinueWith<SiteInner>(t =>
                 {
-                    bindingTasks.Add(binding.CreateAsync(cancellationToken));
-                }
-                foreach (string binding in hostNameBindingsToDelete)
+                    var innerSite = t.Result;
+                    Inner.SiteConfig = null;
+                    return innerSite;
+                },
+                cancellationToken,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default)
+            .ContinueWith(t =>
                 {
-                    bindingTasks.Add(DeleteHostNameBindingAsync(binding, cancellationToken));
-                }
-                return Task.WhenAll(bindingTasks).ContinueWith(bindingt =>
-                {
-                    // Refresh after hostname bindings
-                    return GetSiteAsync(cancellationToken);
-                }).Unwrap();
-            }).Unwrap().ContinueWith(t =>
-            {
-                var innerSite = t.Result;
-                // Submit SSL bindings
-                var certTasks = new List<Task<IAppServiceCertificate>>();
-                foreach (var binding in sslBindingsToCreate.Values)
-                {
-                    binding.Inner.ToUpdate = true;
-                    certTasks.Add(binding.NewCertificateAsync(cancellationToken)());
-                    hostNameSslStateMap[binding.Inner.Name] = binding.Inner;
-                }
-                innerSite.HostNameSslStates = new List<HostNameSslState>(hostNameSslStateMap.Values);
-                if (certTasks.Any())
-                {
-                    return Task.WhenAll(certTasks).ContinueWith(cert =>
+                    // Submit hostname bindings
+                    var bindingTasks = new List<Task>();
+                    foreach (var binding in hostNameBindingsToCreate.Values)
                     {
-                        return CreateOrUpdateInnerAsync(innerSite, cancellationToken);
-                    }).Unwrap();
-                }
-                else
+                        bindingTasks.Add(binding.CreateAsync(cancellationToken));
+                    }
+                    foreach (string binding in hostNameBindingsToDelete)
+                    {
+                        bindingTasks.Add(DeleteHostNameBindingAsync(binding, cancellationToken));
+                    }
+                    return Task.WhenAll(bindingTasks)
+                    .ContinueWith(bindingt =>
+                        {
+                            // Refresh after hostname bindings
+                            return GetSiteAsync(cancellationToken);
+                        },
+                        cancellationToken,
+                        TaskContinuationOptions.ExecuteSynchronously,
+                        TaskScheduler.Default).Unwrap();
+                },
+                cancellationToken,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default).Unwrap()
+            .ContinueWith(t =>
                 {
-                    return Task.FromResult(innerSite);
-                }
-            }).Unwrap();
+                    var innerSite = t.Result;
+                    // Submit SSL bindings
+                    var certTasks = new List<Task<IAppServiceCertificate>>();
+                    foreach (var binding in sslBindingsToCreate.Values)
+                    {
+                        binding.Inner.ToUpdate = true;
+                        certTasks.Add(binding.NewCertificateAsync(cancellationToken)());
+                        hostNameSslStateMap[binding.Inner.Name] = binding.Inner;
+                    }
+                    innerSite.HostNameSslStates = new List<HostNameSslState>(hostNameSslStateMap.Values);
+                    if (certTasks.Any())
+                    {
+                        return Task.WhenAll(certTasks)
+                        .ContinueWith(cert =>
+                            {
+                                return CreateOrUpdateInnerAsync(innerSite, cancellationToken);
+                            },
+                            cancellationToken,
+                            TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default).Unwrap();
+                    }
+                    else
+                    {
+                        return Task.FromResult(innerSite);
+                    }
+                },
+                cancellationToken,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default).Unwrap();
             
             // Submit site config
             if (this.SiteConfig != null)
@@ -509,7 +528,6 @@ namespace Microsoft.Azure.Management.AppService.Fluent
                 if (connectionStrings == null)
                 {
                     connectionStrings = new ConnectionStringDictionaryInner();
-                    connectionStrings.Location = RegionName;
                 }
                 if (connectionStrings.Properties == null)
                 {
@@ -533,7 +551,6 @@ namespace Microsoft.Azure.Management.AppService.Fluent
                 if (slotConfigs == null)
                 {
                     slotConfigs = new SlotConfigNamesResourceInner();
-                    slotConfigs.Location = RegionName;
                 }
                 if (slotConfigs.AppSettingNames == null)
                 {
@@ -615,7 +632,6 @@ namespace Microsoft.Azure.Management.AppService.Fluent
                 if (appSettings == null)
                 {
                     appSettings = new StringDictionaryInner();
-                    appSettings.Location = RegionName;
                 }
                 if (appSettings.Properties == null)
                 {
@@ -881,10 +897,7 @@ namespace Microsoft.Azure.Management.AppService.Fluent
         public WebAppSourceControlImpl<FluentT, FluentImplT, DefAfterRegionT, DefAfterGroupT, UpdateT> DefineSourceControl()
         {
             return new WebAppSourceControlImpl<FluentT, FluentImplT, DefAfterRegionT, DefAfterGroupT, UpdateT>(
-                new SiteSourceControlInner()
-                {
-                    Location = RegionName
-                }, this);
+                new SiteSourceControlInner(), this);
         }
 
         ///GENMHASH:1703877FCECC33D73EA04EEEF89045EF:A93CDCF3EC94A75CDDBFCAC39CD42834
@@ -1241,7 +1254,7 @@ namespace Microsoft.Azure.Management.AppService.Fluent
         ///GENMHASH:F644770BE853EE30024DEE4BE9D96441:049C263D531DF9C62F1DF917EA2491D1
         public OperatingSystem OperatingSystem()
         {
-            if (Inner.Reserved != null && (bool)Inner.Reserved)
+            if (Inner.Kind.ToLower().Contains("linux"))
             {
                 return Fluent.OperatingSystem.Linux;
             }
@@ -1306,5 +1319,13 @@ namespace Microsoft.Azure.Management.AppService.Fluent
         public abstract Task ResetSlotConfigurationsAsync(CancellationToken cancellationToken = default(CancellationToken));
         public abstract Task RestartAsync(CancellationToken cancellationToken = default(CancellationToken));
         public abstract Task<IWebAppSourceControl> GetSourceControlAsync(CancellationToken cancellationToken = default(CancellationToken));
+
+
+        internal abstract Task<MSDeployStatusInner> CreateMSDeploy(MSDeployInner msDeployInner, CancellationToken cancellationToken);
+
+        public WebDeploymentImpl<FluentT, FluentImplT, DefAfterRegionT, DefAfterGroupT, UpdateT> Deploy()
+        {
+            return new WebDeploymentImpl<FluentT, FluentImplT, DefAfterRegionT, DefAfterGroupT, UpdateT>(this);
+        }
     }
 }

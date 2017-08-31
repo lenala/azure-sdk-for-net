@@ -3,6 +3,7 @@
 
 namespace Microsoft.Azure.Management.Compute.Fluent
 {
+    using Microsoft.Azure.Management.Graph.RBAC.Fluent;
     using Models;
     using Network.Fluent;
     using ResourceManager.Fluent.Core;
@@ -27,15 +28,18 @@ namespace Microsoft.Azure.Management.Compute.Fluent
     {
         private IStorageManager storageManager;
         private INetworkManager networkManager;
+        private IGraphRbacManager rbacManager;
 
         ///GENMHASH:D153EE3A7098DCC0FDE502B79387242D:20D58C6F0677BACCE2BBFE4994C6C570
         internal VirtualMachineScaleSetsImpl (
             IComputeManager computeManager,
             IStorageManager storageManager,
-            INetworkManager networkManager) : base(computeManager.Inner.VirtualMachineScaleSets, computeManager)
+            INetworkManager networkManager, 
+            IGraphRbacManager rbacManager) : base(computeManager.Inner.VirtualMachineScaleSets, computeManager)
         {
             this.storageManager = storageManager;
             this.networkManager = networkManager;
+            this.rbacManager = rbacManager;
         }
 
         ///GENMHASH:95834C6C7DA388E666B705A62A7D02BF:3953AC722DFFCDF40E1EEF787AFD1326
@@ -81,7 +85,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:2048E8AC80AC022225C462CE7FD14A6F:AB513A3D7E5B1192B76F853CB23CBB12
         public void Deallocate(string groupName, string name)
         {
-            this.Inner.Deallocate(groupName, name);
+            Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => this.Inner.DeallocateAsync(groupName, name));
         }
 
         ///GENMHASH:9F1310A4445A183902C9AF672DA34354:F32BEF843CE33ABB858763CFD92B9A36
@@ -93,7 +97,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:9F1310A4445A183902C9AF672DA34354:F32BEF843CE33ABB858763CFD92B9A36
         public void PowerOff(string groupName, string name)
         {
-            this.Inner.PowerOff(groupName, name);
+            Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => this.Inner.PowerOffAsync(groupName, name));
         }
 
         ///GENMHASH:CD0E967F30C27C522C0DE3E4523C6CDD:8C9B139D9CD48BE89CACA8348E2E8469
@@ -105,7 +109,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:CD0E967F30C27C522C0DE3E4523C6CDD:8C9B139D9CD48BE89CACA8348E2E8469
         public void Restart(string groupName, string name)
         {
-            this.Inner.Restart(groupName, name);
+            Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => this.Inner.RestartAsync(groupName, name));
         }
 
         ///GENMHASH:F5C1D0B90DEED77EE54F7CEB164C727E:4E2B451086A707DC66F26388A688071E
@@ -117,7 +121,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:F5C1D0B90DEED77EE54F7CEB164C727E:4E2B451086A707DC66F26388A688071E
         public void Start(string groupName, string name)
         {
-            this.Inner.Start(groupName, name);
+            Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => this.Inner.StartAsync(groupName, name));
         }
 
         ///GENMHASH:4DBD1302C1BE61E6004FB18DA868020B:A8445E32081DE89D5D3DAD2DAAFEFB2F
@@ -129,7 +133,7 @@ namespace Microsoft.Azure.Management.Compute.Fluent
         ///GENMHASH:4DBD1302C1BE61E6004FB18DA868020B:A8445E32081DE89D5D3DAD2DAAFEFB2F
         public void Reimage(string groupName, string name)
         {
-            this.Inner.Reimage(groupName, name);
+            Management.ResourceManager.Fluent.Core.Extensions.Synchronize(() => this.Inner.ReimageAsync(groupName, name));
         }
 
         ///GENMHASH:8ACFB0E23F5F24AD384313679B65F404:AD7C28D26EC1F237B93E54AD31899691
@@ -181,7 +185,8 @@ namespace Microsoft.Azure.Management.Compute.Fluent
                 inner,
                 Manager,
                 storageManager,
-                networkManager);
+                networkManager,
+                rbacManager);
         }
 
         ///GENMHASH:02DED088A2888BB795F0F3D5DD74F4BD:5D05902D26BEABDC6406C636F9FE6823
@@ -192,7 +197,8 @@ namespace Microsoft.Azure.Management.Compute.Fluent
                 inner,
                 Manager,
                 storageManager,
-                networkManager);
+                networkManager,
+                rbacManager);
         }
     }
 }

@@ -6,7 +6,7 @@ using Microsoft.Azure.Management.Batch.Fluent;
 using Microsoft.Azure.Management.Cdn.Fluent;
 using Microsoft.Azure.Management.Compute.Fluent;
 using Microsoft.Azure.Management.ContainerRegistry.Fluent;
-using Microsoft.Azure.Management.DocumentDB.Fluent;
+using Microsoft.Azure.Management.CosmosDB.Fluent;
 using Microsoft.Azure.Management.Fluent;
 using Microsoft.Azure.Management.Graph.RBAC.Fluent;
 using Microsoft.Azure.Management.KeyVault.Fluent;
@@ -15,6 +15,7 @@ using Microsoft.Azure.Management.Redis.Fluent;
 using Microsoft.Azure.Management.ResourceManager.Fluent;
 using Microsoft.Azure.Management.ResourceManager.Fluent.Authentication;
 using Microsoft.Azure.Management.ResourceManager.Fluent.Core;
+using Microsoft.Azure.Management.Search.Fluent;
 using Microsoft.Azure.Management.ServiceBus.Fluent;
 using Microsoft.Azure.Management.Sql.Fluent;
 using Microsoft.Azure.Management.Storage.Fluent;
@@ -201,6 +202,15 @@ namespace Fluent.Tests.Common
                 .Authenticate(c, c.DefaultSubscriptionId));
         }
 
+        public static ISearchManager CreateSearchManager()
+        {
+            return CreateMockedManager(c => SearchManager
+                .Configure()
+                .WithDelegatingHandlers(GetHandlers())
+                .WithLogLevel(HttpLoggingDelegatingHandler.Level.BodyAndHeaders)
+                .Authenticate(c, c.DefaultSubscriptionId));
+        }
+
         public static IServiceBusManager CreateServiceBusManager()
         {
             return CreateMockedManager(c => ServiceBusManager
@@ -219,9 +229,9 @@ namespace Fluent.Tests.Common
                 .Authenticate(c, c.DefaultSubscriptionId));
         }
 
-        public static IDocumentDBManager CreateDocumentDB()
+        public static ICosmosDBManager CreateCosmosDB()
         {
-            return CreateMockedManager(c => DocumentDBManager
+            return CreateMockedManager(c => CosmosDBManager
                 .Configure()
                 .WithDelegatingHandlers(GetHandlers())
                 .WithLogLevel(HttpLoggingDelegatingHandler.Level.BodyAndHeaders)
